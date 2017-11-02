@@ -66,33 +66,6 @@ class Qq extends OAuth2
     /**
      * @inheritdoc
      */
-    public function buildAuthUrl(array $params = [])
-	{
-        $authState = $this->generateAuthState();
-        $this->setState('authState', $authState);
-        $params['state'] = $authState;
-        return parent::buildAuthUrl($params);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function fetchAccessToken($authCode, array $params = [])
-	{
-        $authState = $this->getState('authState');
-        if (!isset($_REQUEST['state']) || empty($authState) || strcmp($_REQUEST['state'], $authState) !== 0) {
-            throw new HttpException(400, 'Invalid auth state parameter.');
-        } else {
-            $this->removeState('authState');
-        }
-
-		return parent::fetchAccessToken($authCode, $params);
-
-    }
-
-    /**
-     * @inheritdoc
-     */
     protected function defaultNormalizeUserAttributeMap()
     {
         return [
@@ -124,39 +97,20 @@ class Qq extends OAuth2
     /**
      * @inheritdoc
      */
-    protected function processResponse($rawResponse, $contentType = self::CONTENT_TYPE_AUTO)
-	{
-        if ($contentType === self::CONTENT_TYPE_AUTO && strpos($rawResponse, "callback(") === 0) {
-			$count = 0;
-            $jsonData = preg_replace('/^callback\(\s*(\\{.*\\})\s*\);$/is', '\1', $rawResponse, 1, $count);
-			if ($count === 1) {
-				$rawResponse = $jsonData;
-				$contentType = self::CONTENT_TYPE_JSON;
-			}
+    protected function sendRequest($request)
+    {
+        $response = $request->send();
+        
+        if (!$response->getIsOk()) {
+            throw new InvalidResponseException($response, 'Request failed with code: ' . $response->getStatusCode() . ', message: ' . $response->getContent());
         }
-        return parent::processResponse($rawResponse, $contentType);
-    }
-
-    /**
-     * Generates the auth state value.
-     * @return string auth state value.
-     */
-    protected function generateAuthState()
-    {
-        return sha1(uniqid(get_class($this), true));
-    }
-
-    /**
-     * @inheritdoc
-     */
-    protected function defaultReturnUrl()
-    {
-        $params = $_GET;
-        unset($params['code']);
-        unset($params['state']);
-        $params[0] = Yii::$app->controller->getRoute();
-
-        return Yii::$app->getUrlManager()->createAbsoluteUrl($params);
+        $count = 0;
+        $jsonData = preg_replace('/^callback\(\s*(\\{.*\\})\s*\);$/is', '\1', $response->getContent(), 1, $count);
+        if ($count === 1) {
+            $response->setContent($jsonData);
+            $response->format = yii\httpclient\Client::FORMAT_JSON;
+        }
+        return $response->getData();
     }
 
     /**
